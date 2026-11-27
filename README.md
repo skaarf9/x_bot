@@ -163,6 +163,37 @@ git tag v1.1.0 && git push origin v1.1.0
 - **千万别复制 `edge-monitor`**：v20 app-bound 加密绑定 profile 路径，换路径后浏览器会判定
   无法解密并删除 cookie，等于掉登录。
 
+## 日志与故障排查
+
+所有版本都会写 `monitor.log`。登录类问题先看这几行：
+
+| 日志 | 含义 |
+| --- | --- |
+| `启动监听，用户: ...`（不带版本号） | 1.0.0 之前的旧代码 |
+| `启动监听 v1.0.1，用户: ...` | 1.0.1 及以上 |
+| `CDP 连接已失效，重新连接浏览器（登录态不受影响）` | 调试连接断了，新版会自动恢复 |
+| `浏览器连接正常，但当前 x.com cookie: auth_token, ct0, ...` | 浏览器确实已登录；若随后仍报未登录，才是判断逻辑问题 |
+| `浏览器连接正常，但当前 x.com cookie: (完全没有)` | 确实掉登录了，需要重新登录 |
+| `打开登录页失败: Target.createTarget timed out` | 旧版「连接假死被当成未登录」的典型症状 |
+| `本轮异常: 'Browser' object has no attribute 'ping'` | 覆盖更新不完整：只换了 `x_monitor.py`，没换 `cdp_client.py` |
+| `等待登录超时` | 浏览器确实停在登录页，10 分钟内没人登录 |
+
+一键诊断（生成脱敏报告，可发给维护者）：
+
+```bash
+python x_monitor.py --diag
+```
+
+会在目录下生成 `diag.txt`，包含版本、浏览器/端口、登录态、x.com cookie 名、计划任务实际
+执行的命令、最近 80 行日志；**Telegram token / chat_id 已打码**。
+
+### 覆盖更新的注意事项
+
+`x_monitor.py`、`cdp_client.py`、`browser_util.py` 是一套，必须一起替换；
+建议整个目录覆盖（保留自己的 `config.json` / `state.json` / `edge-monitor/`），并删掉
+`__pycache__`。另外确认计划任务指向的是你更新后的目录——`--diag` 里的 `task_command`
+就是它实际在跑的命令。
+
 ## 隐私提醒
 
 - `config.json` 里有 Telegram token，`edge-monitor/` 里有 X 登录态，`state.json` 里有监控记录。

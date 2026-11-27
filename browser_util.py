@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import socket
@@ -14,6 +15,7 @@ import requests
 from cdp_client import Browser
 
 BASE = Path(__file__).resolve().parent
+log = logging.getLogger(__name__)
 RUNNING_FILE = BASE / "runtime.json"
 
 # 常见 Chromium 系浏览器位置（Edge / Chrome / Brave / Chromium）
@@ -137,7 +139,8 @@ def ensure_browser(port: int, profile: Path, exe: str = "", timeout: int = 40) -
 def is_logged_in(browser: Browser) -> bool:
     try:
         cookies = browser.cookies()
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        log.warning("读取浏览器 cookie 失败（连接问题，不代表掉登录）: %s", e)
         return False
     return any(c.get("name") == "auth_token" and "x.com" in (c.get("domain") or "")
                for c in cookies)

@@ -17,6 +17,9 @@ import json
 import logging
 import logging.handlers
 import os
+import platform
+import re
+import subprocess
 import shutil
 import sys
 import threading
@@ -295,6 +298,13 @@ class Monitor:
         if browser_util.is_logged_in(browser):
             return True
 
+        try:
+            names = sorted({c.get("name") for c in browser.cookies()
+                            if "x.com" in (c.get("domain") or "")})
+            log.info("浏览器连接正常，但当前 x.com cookie: %s",
+                     ", ".join(names) if names else "(完全没有)")
+        except Exception as e:  # noqa: BLE001
+            log.warning("读取 x.com cookie 失败: %s", e)
         log.info("监控浏览器未登录，打开 X 登录页，请在浏览器窗口里完成登录 ...")
         self.notify("X 监听器未登录", "已打开登录页，请在监控浏览器窗口登录 x.com")
         if self.login_page is None:
@@ -522,6 +532,83 @@ def sleep_with_trigger(seconds: float):
         time.sleep(0.5)
 
 
+def run_diag(cfg: dict) -> Path:
+    """生成一份脱敏的诊断文件，方便远程排查。"""
+    NL = chr(10)
+    lines: list[str] = []
+
+    def add(k: str, v):
+        lines.append(f"{k}: {v}")
+
+    add("time", datetime.now(EAST8).isoformat())
+    add("version", __version__)
+    add("python", sys.version.split()[0])
+    add("platform", platform.platform())
+
+    settings = browser_util.resolve_settings(cfg)
+    add("browser_exe", settings["exe"] or
+        "(auto: " + (browser_util.detect_browser_exe() or "未找到") + ")")
+    add("profile_dir", settings["profile"])
+    add("profile_exists", settings["profile"].exists())
+
+    rt = browser_util.read_runtime()
+    add("runtime", json.dumps(rt, ensure_ascii=False))
+    port = int(rt.get("port") or settings["port"])
+    add("port", port)
+    alive = browser_util.devtools_alive(port)
+    add("devtools_alive", alive)
+    if alive:
+        try:
+            b = browser_util.Browser(port)
+            add("browser", b.version)
+            add("logged_in", browser_util.is_logged_in(b))
+            names = sorted({c.get("name") for c in b.cookies()
+                            if "x.com" in (c.get("domain") or "")})
+            add("x_cookies", ", ".join(names) or "(无)")
+            pages = [t.get("url") or "" for t in b.list_pages()]
+            add("pages", " | ".join(pg[:90] for pg in pages[:10]))
+            b.close()
+        except Exception as e:  # noqa: BLE001
+            add("browser_error", repr(e))
+    else:
+        add("browser_error", "调试端口未响应")
+
+    try:
+        r = subprocess.run(["schtasks", "/query", "/tn", "X-Monitor", "/xml"],
+                            capture_output=True, text=True, timeout=10,
+                            encoding="utf-8", errors="replace")
+        if r.returncode == 0:
+            m = re.search(r"<Command>(.*?)</Command>.*?<Arguments>(.*?)</Arguments>",
+                          r.stdout, re.S)
+            add("task_command", (m.group(0).replace(NL, " ") if m else "(解析失败)")[:300])
+        else:
+            add("task_command", "(未安装计划任务)")
+    except Exception as e:  # noqa: BLE001
+        add("task_command", f"(读取失败: {e})")
+
+    redacted = json.loads(json.dumps(cfg, ensure_ascii=False))
+    for section, key in (("telegram", "token"), ("telegram", "chat_id"),
+                         ("bark", "device_key")):
+        if (redacted.get(section) or {}).get(key):
+            redacted[section][key] = "***"
+    add("config", json.dumps(redacted, ensure_ascii=False))
+
+    try:
+        with open(BASE / "monitor.log", encoding="utf-8", errors="replace") as f:
+            tail = f.readlines()[-80:]
+        lines.append("")
+        lines.append("---- monitor.log (last 80 lines) ----")
+        lines.extend(line.rstrip(NL) for line in tail)
+    except FileNotFoundError:
+        lines.append("(没有 monitor.log)")
+
+    out = BASE / "diag.txt"
+    out.write_text(NL.join(lines), encoding="utf-8")
+    print(NL.join(lines[:40]))
+    print(f"{NL}完整诊断已写入: {out}")
+    return out
+
+
 def _check_updates_async():
     try:
         info = updater.check_update()
@@ -541,10 +628,11 @@ def main():
     ap.add_argument("--once", action="store_true", help="只跑一轮")
     ap.add_argument("--user", help="只检查指定用户名")
     ap.add_argument("--check", action="store_true", help="只做浏览器/登录自检")
+    ap.add_argument("--diag", action="store_true", help="生成脱敏诊断文件 diag.txt")
     args = ap.parse_args()
 
     setup_logging(BASE / "monitor.log")
-    if not (args.once or args.check) and not acquire_instance_lock():
+    if not (args.once or args.check or args.diag) and not acquire_instance_lock():
         log.error("已有监听实例在运行（monitor.lock 被占用），本进程退出")
         return
     ensure_config()
@@ -552,6 +640,10 @@ def main():
     state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {"users": {}}
     state.setdefault("users", {})
     notifier = build_notifier(cfg)
+
+    if args.diag:
+        run_diag(cfg)
+        return
 
     if args.check:
         settings = browser_util.resolve_settings(cfg)
