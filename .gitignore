@@ -9,6 +9,7 @@ config.json
 state.json
 runtime.json
 monitor.lock
+gui.lock
 monitor.log*
 trigger.flag
 update_cache.json

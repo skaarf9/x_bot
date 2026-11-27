@@ -34,6 +34,9 @@ TRIGGER_FILE = BASE / "trigger.flag"
 TASK_NAME = "X-Monitor"
 CREATE_NO_WINDOW = 0x08000000
 NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
+WINDOW_TITLE = "X 监听管理"
+GUI_LOCK_FILE = BASE / "gui.lock"
+_GUI_LOCK = None
 
 STATE_TEXT = {"Running": "运行中", "Ready": "已就绪", "Disabled": "已禁用",
               "未安装": "未安装", "Unknown": "未知"}
@@ -48,6 +51,55 @@ def dir_size(path: Path) -> int:
             except OSError:
                 pass
     return total
+
+
+def acquire_lock(path: Path):
+    """独占一个锁文件；已被占用返回 None。进程退出时系统自动释放。"""
+    f = open(path, "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except OSError:
+        f.close()
+        return None
+
+
+def activate_existing_window(title: str = WINDOW_TITLE) -> bool:
+    """把已经打开的窗口叫到前台（仅 Windows）。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        found = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def enum_proc(hwnd, _lparam):
+            if user32.IsWindowVisible(hwnd):
+                n = user32.GetWindowTextLengthW(hwnd)
+                if n:
+                    buf = ctypes.create_unicode_buffer(n + 1)
+                    user32.GetWindowTextW(hwnd, buf, n + 1)
+                    if buf.value == title:
+                        found.append(hwnd)
+            return True
+
+        user32.EnumWindows(enum_proc, 0)
+        if found:
+            user32.ShowWindow(found[0], 9)  # SW_RESTORE
+            user32.SetForegroundWindow(found[0])
+            return True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
 
 
 def run_cmd(cmd):
@@ -290,7 +342,7 @@ class App:
         self.update_link = ""
         self.update_var = tk.StringVar(value="")
 
-        root.title("X 监听管理")
+        root.title(WINDOW_TITLE)
         root.geometry("1000x720")
         root.minsize(820, 560)
         self._build_ui()
@@ -694,6 +746,16 @@ class App:
 
 
 def main():
+    global _GUI_LOCK
+    _GUI_LOCK = acquire_lock(GUI_LOCK_FILE)
+    if _GUI_LOCK is None:
+        if not activate_existing_window():
+            tip = tk.Tk()
+            tip.withdraw()
+            messagebox.showinfo(WINDOW_TITLE, "已经有一个实例在运行。")
+            tip.destroy()
+        return
+
     root = tk.Tk()
     try:
         ttk.Style().theme_use("vista" if sys.platform == "win32" else "clam")
