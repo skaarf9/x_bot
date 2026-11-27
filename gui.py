@@ -172,8 +172,8 @@ class NotifyDialog(tk.Toplevel):
         ttk.Label(frm, text="留空 = 跟随系统代理；需要代理时填 http://127.0.0.1:7890",
                   foreground="#888").grid(row=4, column=1, sticky="w")
 
-        hint = ("创建方法：Telegram 里搜索 @BotFather → /newbot → 起名 → 拿到 token；"
-                "然后打开你自己的新 bot 点 START（发 /start），否则 bot 不能主动给你发消息。")
+        hint = ("创建：Telegram 搜 @BotFather → /newbot → 起名 → 拿到 token；再打开自己的 bot 发 /start。\n"
+                "用群聊：把 bot 拉进群 → 在群里发 /start@你的bot → 点「获取」，填的是群的 chat_id。")
         tk.Label(frm, text=hint, wraplength=520, justify="left", fg="#555").grid(
             row=5, column=0, columnspan=3, sticky="w", pady=(8, 4))
 
@@ -232,7 +232,7 @@ class NotifyDialog(tk.Toplevel):
                 return
             cid, who = res
             self.chat_var.set(cid)
-            suffix = f"（@{who}）" if who else ""
+            suffix = f"（{who}）" if who else ""
             self._set_status(f"已获取 chat_id={cid}{suffix}", ok=True)
 
         self._async(n.find_chat_id, done)

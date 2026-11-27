@@ -22,6 +22,15 @@ class TelegramError(RuntimeError):
     pass
 
 
+def _chat_of(update: dict) -> dict | None:
+    """从 update 里取出 chat 对象（消息、编辑、频道帖、成员变动都算）。"""
+    for key in ("message", "edited_message", "channel_post", "my_chat_member", "chat_member"):
+        obj = update.get(key)
+        if isinstance(obj, dict) and obj.get("chat"):
+            return obj["chat"]
+    return None
+
+
 class TelegramNotifier:
     """和 BarkNotifier 同样的接口：.enabled / .send(title, body, url=...)."""
 
@@ -67,6 +76,10 @@ class TelegramNotifier:
                 raise TelegramError("bot token 无效（401 Unauthorized）")
             if code == 400 and "chat not found" in desc.lower():
                 raise TelegramError("chat_id 不对，或你还没给 bot 发过 /start")
+            if code == 400 and "not enough rights" in desc.lower():
+                raise TelegramError("bot 在该群没有发言权限（把它设为管理员，或允许成员发言）")
+            if code == 403 and "bot was kicked" in desc.lower():
+                raise TelegramError("bot 已被移出该群")
             if code == 409:
                 raise TelegramError("这个 bot 设置了 webhook，无法用 getUpdates；先删除 webhook")
             last = TelegramError(f"Telegram 错误 {code}: {desc}")
@@ -99,17 +112,19 @@ class TelegramNotifier:
         return self.api("getMe")
 
     def find_chat_id(self) -> tuple[str, str]:
-        """从最近的消息里找出私聊 chat_id（前提：你已经给 bot 发过消息）。"""
+        """从最近的 update 里取 chat_id：私聊、群、频道都可以。
+
+        群聊需要先在群里发一条 /start@你的bot（普通消息会被隐私模式过滤）。
+        """
         updates = self.api("getUpdates", limit=100, timeout=0)
         for u in reversed(updates or []):
-            msg = u.get("message") or u.get("edited_message") or u.get("channel_post")
-            if not msg:
+            chat = _chat_of(u)
+            if not chat or not chat.get("id"):
                 continue
-            chat = msg.get("chat") or {}
-            if chat.get("type") == "private" and chat.get("id"):
-                who = chat.get("username") or chat.get("first_name") or ""
-                return str(chat["id"]), who
-        raise TelegramError("没找到会话：请先在 Telegram 里给这个 bot 发一条 /start，再点「获取 chat_id」")
+            title = (chat.get("title") or chat.get("username")
+                     or chat.get("first_name") or "")
+            return str(chat["id"]), title
+        raise TelegramError("没找到会话：先给 bot 发一条 /start；群聊里发 /start@你的bot")
 
     def test(self) -> str:
         me = self.get_me()
