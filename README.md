@@ -135,3 +135,7 @@ Telegram API 在部分网络环境直连不通，需要代理时在「通知设�
 
 - `config.json` 里有 Telegram token，`edge-monitor/` 里有 X 登录态，`state.json` 里有监控记录。
 - 上传 GitHub / 打包分发前，确认这些都不在包里（`.gitignore` 已覆盖）。
+
+## License
+
+MIT License - 见 [LICENSE](LICENSE)。
