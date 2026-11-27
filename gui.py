@@ -16,10 +16,13 @@ import sys
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import messagebox, ttk
 
 import browser_util
+import updater
+import version
 import x_monitor
 from telegram_notify import TelegramError, TelegramNotifier
 
@@ -284,6 +287,8 @@ class App:
         self.q: queue.Queue = queue.Queue()
         self.worker_running = True
         self.last_status: dict = {}
+        self.update_link = ""
+        self.update_var = tk.StringVar(value="")
 
         root.title("X 监听管理")
         root.geometry("1000x720")
@@ -298,6 +303,7 @@ class App:
         self.root.after(300, self._drain_queue)
         self.root.after(2000, self._tick_log)
         self.root.after(5000, self._tick_table)
+        self.root.after(1500, lambda: self._check_updates(force=False))
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ---------------- UI ----------------
@@ -375,6 +381,14 @@ class App:
         bottom.pack(fill="x", padx=10, pady=(0, 8))
         ttk.Label(bottom, text=f"配置: {CFG_FILE}", foreground="#888").pack(side="left")
         ttk.Button(bottom, text="打开目录", command=self.on_open_dir).pack(side="right")
+        self.update_label = tk.Label(bottom, textvariable=self.update_var, fg="#b26a00",
+                                     cursor="hand2")
+        self.update_label.pack(side="right", padx=10)
+        self.update_label.bind("<Button-1>", lambda _e: self._open_update())
+        self.version_label = tk.Label(bottom, text=f"v{version.__version__}", fg="#666",
+                                      cursor="hand2")
+        self.version_label.pack(side="right", padx=(0, 12))
+        self.version_label.bind("<Button-1>", lambda _e: self._check_updates(force=True))
 
     # ---------------- 数据 ----------------
     def _load_state(self):
@@ -647,6 +661,32 @@ class App:
         self.log_text.insert("end", f"\n[GUI] {time.strftime('%H:%M:%S')} {msg}\n")
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
+
+    # ---------------- 版本更新 ----------------
+    def _check_updates(self, force: bool = False):
+        threading.Thread(target=self._check_updates_worker, args=(force,),
+                         daemon=True).start()
+
+    def _check_updates_worker(self, force: bool):
+        try:
+            info = updater.check_update(force=force)
+        except Exception:  # noqa: BLE001
+            info = None
+        self.root.after(0, lambda: self._apply_update(info))
+
+    def _apply_update(self, info):
+        if not info:
+            return
+        if info.get("newer"):
+            self.update_link = info.get("url", "")
+            self.update_var.set(f"发现新版本 v{info['latest']}，点击查看")
+            self._note(f"发现新版本 v{info['latest']}（当前 v{info['current']}）")
+        else:
+            self.update_var.set("已是最新")
+
+    def _open_update(self):
+        if self.update_link:
+            webbrowser.open(self.update_link)
 
     def _on_close(self):
         self.worker_running = False

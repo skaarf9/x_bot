@@ -19,14 +19,17 @@ import logging.handlers
 import os
 import shutil
 import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import browser_util
+import updater
 from bark_notify import BarkNotifier
 from cdp_client import Browser, CDPError, Page
 from telegram_notify import TelegramNotifier
+from version import __version__
 from x_parser import newest, parse_timeline
 
 BASE = Path(__file__).resolve().parent
@@ -45,10 +48,11 @@ DEFAULTS = {
     "login_timeout_seconds": 600,
     "include_replies": False,
     "skip_retweets": True,
-    "notify_on_first_seen": False,
+    "notify_on_first_seen": True,
     "dedup_days": 7,
     "dedup_max_per_user": 500,
-    "cache_cleanup_hours": 0,   # 0=关闭定时清理；>0 表示每 N 小时清一次 x.com 站点缓存
+    "cache_cleanup_hours": 0,   # 0=关闭；>0 表示每 N 小时清一次 x.com 站点缓存
+    "check_updates": True,      # 启动时检查 GitHub 上的新版本
     "users": [],
     "telegram": {"enabled": False, "token": "", "chat_id": "", "proxy": ""},
     "bark": {"enabled": False, "server": "", "device_key": ""},
@@ -424,7 +428,7 @@ class Monitor:
         if not last_id:
             log.info("@%s 首次记录，最新推文 %s: %s", name, top["id"],
                      top["text"][:50].replace("\n", " "))
-            if self.cfg.get("notify_on_first_seen", False):
+            if self.cfg.get("notify_on_first_seen", True):
                 self.notify(f"开始监听 @{name}", f"当前最新推文：\n\n{render_tweet(top)}",
                             url=top["url"])
         else:
@@ -518,6 +522,20 @@ def sleep_with_trigger(seconds: float):
         time.sleep(0.5)
 
 
+def _check_updates_async():
+    try:
+        info = updater.check_update()
+    except Exception:  # noqa: BLE001
+        return
+    if not info:
+        return
+    if info.get("newer"):
+        log.warning("发现新版本 v%s（当前 v%s）: %s",
+                    info["latest"], info["current"], info["url"])
+    else:
+        log.info("版本 v%s 已是最新", info["current"])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true", help="只跑一轮")
@@ -552,7 +570,10 @@ def main():
             users = [{"screen_name": args.user}]
 
     monitor = Monitor(cfg, state, notifier)
-    log.info("启动监听，用户: %s", ", ".join(u["screen_name"] for u in users) or "(空)")
+    log.info("启动监听 v%s，用户: %s", __version__,
+             ", ".join(u["screen_name"] for u in users) or "(空)")
+    if cfg.get("check_updates", True):
+        threading.Thread(target=_check_updates_async, daemon=True).start()
 
     cfg_mtime = CFG_FILE.stat().st_mtime if CFG_FILE.exists() else 0
     while True:

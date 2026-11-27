@@ -46,6 +46,7 @@ python x_monitor.py --user elonmusk --once
 | `x_parser.py` | 时间线响应解析（兼容新旧两种结构） |
 | `telegram_notify.py` | Telegram 推送（多 chat_id、代理、429 重试） |
 | `bark_notify.py` | Bark 推送（可选） |
+| `version.py` / `updater.py` | 版本号与 GitHub 新版本检查 |
 | `config.example.json` | 配置模板 |
 | `install_autostart.ps1` / `uninstall_autostart.ps1` | Windows 登录自启任务 |
 | `tests/` | 离线自测（解析器、去重） |
@@ -110,6 +111,7 @@ Telegram API 在部分网络环境直连不通，需要代理时在「通知设�
 
 - 每轮刷新一次各用户主页，取时间线里 **ID 最大**的推文；置顶推文不会误报。
 - 新推文按 ID 顺序推送；一次超过 3 条合并成一条汇总。
+- **首次记录**：新添加一个用户时，会先发一条「开始监听」通知，附上当前最新推文作为基线（`notify_on_first_seen`，默认开）。
 - **去重**：发送前先把推文 ID 落盘到 `state.json`，所以重启、崩溃、回滚 state 都不会重发；
   发送失败会回滚记录并在下一轮重试。默认保留 7 天 / 每人 500 条。
 - **单实例**：`monitor.lock` 文件锁，重复启动会直接退出，避免双份推送。
@@ -130,6 +132,26 @@ Telegram API 在部分网络环境直连不通，需要代理时在「通知设�
 - 登录完全自动：检测到未登录会弹登录页，登录后自动继续；不需要导出 cookie / key。
 - Windows 用 `install_autostart.ps1` 注册登录自启；macOS/Linux 用 systemd / cron / launchd
   跑 `python x_monitor.py` 即可。
+
+## 版本与更新
+
+- 界面右下角显示当前版本；启动时自动检查一次 GitHub 上的新版本（结果缓存 6 小时）。
+  发现新版本会显示「发现新版本 vX.Y.Z，点击查看」，点版本号可以手动重查。
+- 检查逻辑**优先读 Release，没有 Release 就读 git tag**——所以不强制发 Release，打个 tag 就行。
+- 监听进程启动时也会检查，并把结果写进 `monitor.log`。
+- 想关掉这个检查：`config.json` 里 `"check_updates": false`。
+
+### 发布新版本
+
+```bash
+# 1. 改 version.py 里的 __version__
+# 2. 提交
+git add -A && git commit -m "v1.1.0: ..." && git push
+# 3. 打 tag 并推送
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+想要更新说明/附件，再到 GitHub 上基于这个 tag 建一个 Release（可选，不建也能被检测到）。
 
 ## 常见问题
 
