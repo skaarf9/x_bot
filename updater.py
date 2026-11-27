@@ -90,8 +90,14 @@ def check_update(force: bool = False) -> dict | None:
     if not force:
         try:
             cached = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-            if now - float(cached.get("checked_at", 0)) < MAX_AGE:
-                return cached.get("result")
+            # 缓存只在「同一版本」内复用；升级后第一次启动会重新检查
+            if (now - float(cached.get("checked_at", 0)) < MAX_AGE
+                    and cached.get("checked_for") == __version__):
+                result = cached.get("result")
+                if isinstance(result, dict):
+                    result["current"] = __version__
+                    result["newer"] = is_newer(result.get("latest", ""), __version__)
+                return result
         except Exception:
             pass
 
@@ -105,7 +111,8 @@ def check_update(force: bool = False) -> dict | None:
         "newer": is_newer(tag),
     }
     try:
-        CACHE_FILE.write_text(json.dumps({"checked_at": now, "result": result},
+        CACHE_FILE.write_text(json.dumps({"checked_at": now, "checked_for": __version__,
+                                          "result": result},
                                          ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
