@@ -44,9 +44,24 @@ def test_falls_back_to_tags():
     assert tag == "v1.2.0", tag
 
 
+def test_raw_fallback():
+    class FakeResp:
+        status_code = 200
+        text = '__version__ = "1.9.9"'
+
+    original = updater.requests.get
+    try:
+        updater.requests.get = lambda url, timeout=None: FakeResp()
+        version, _ = updater._raw_version()
+        assert version == "1.9.9", version
+    finally:
+        updater.requests.get = original
+
+
 if __name__ == "__main__":
     test_parse()
     test_newer()
     test_prefers_release()
     test_falls_back_to_tags()
+    test_raw_fallback()
     print("updater tests: ALL PASSED")

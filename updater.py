@@ -49,8 +49,26 @@ def _get(url: str):
         return None
 
 
+def _raw_version() -> tuple[str | None, str]:
+    """兜底：直接读仓库 main 上的 version.py（不走 API，不受 60 次/小时限流）。"""
+    url = f"https://raw.githubusercontent.com/{REPO}/main/version.py"
+    try:
+        r = requests.get(url, timeout=TIMEOUT)
+    except requests.RequestException:
+        return None, ""
+    if r.status_code != 200:
+        return None, ""
+    for line in r.text.splitlines():
+        if line.startswith("__version__"):
+            value = line.split("=", 1)[-1]
+            value = "".join(ch for ch in value if ch.isalnum() or ch in ".-_")
+            if value:
+                return value, f"https://github.com/{REPO}"
+    return None, ""
+
+
 def latest_remote() -> tuple[str, str] | tuple[None, str]:
-    """返回 (版本/标签名, 链接)。没有 Release 时读 tag。"""
+    """返回 (版本/标签名, 链接)。Release → tag → raw version.py 逐级兜底。"""
     release = _get(API + "/releases/latest")
     if isinstance(release, dict) and release.get("tag_name"):
         return release["tag_name"], release.get("html_url") or f"https://github.com/{REPO}/releases"
@@ -61,7 +79,9 @@ def latest_remote() -> tuple[str, str] | tuple[None, str]:
         if names:
             best = max(names, key=parse_version)
             return best, f"https://github.com/{REPO}/releases/tag/{best}"
-    return None, f"https://github.com/{REPO}"
+
+    # GitHub API 对匿名请求限流很严（共享 IP 很容易 403），这里退回读源码里的版本号
+    return _raw_version()
 
 
 def check_update(force: bool = False) -> dict | None:

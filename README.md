@@ -138,7 +138,9 @@ Telegram API 在部分网络环境直连不通，需要代理时在「通知设�
 
 - 界面右下角显示当前版本；启动时自动检查一次 GitHub 上的新版本（结果缓存 6 小时）。
   发现新版本会显示「发现新版本 vX.Y.Z，点击查看」，点版本号可以手动重查。
-- 检查逻辑**优先读 Release，没有 Release 就读 git tag**——所以不强制发 Release，打个 tag 就行。
+- 检查逻辑依次尝试：**Release → git tag → 直接读 `main` 上的 `version.py`**。
+  所以不强制发 Release，打个 tag 就行；GitHub API 对匿名请求限流很严（共享 IP 容易 403），
+  前两步失败时会自动走最后一条，不受 API 限流影响。
 - 监听进程启动时也会检查，并把结果写进 `monitor.log`。
 - 想关掉这个检查：`config.json` 里 `"check_updates": false`。
 
