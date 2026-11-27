@@ -11,6 +11,7 @@ runtime.json
 monitor.lock
 monitor.log*
 trigger.flag
+update_cache.json
 
 # 监控浏览器 profile（含 X 登录态，绝对不要提交）
 edge-monitor/
