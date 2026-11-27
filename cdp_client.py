@@ -61,6 +61,8 @@ class _Connection:
 
     def call(self, method: str, params: dict | None = None, session_id: str | None = None,
              timeout: float = 30.0) -> dict:
+        if self._closed:
+            raise CDPError("CDP 连接已断开")
         with self._lock:
             self._next_id += 1
             mid = self._next_id
@@ -192,6 +194,14 @@ class Browser:
         target_id = res["targetId"]
         att = self.conn.call("Target.attachToTarget", {"targetId": target_id, "flatten": True})
         return Page(self.conn, target_id, att["sessionId"])
+
+    def ping(self, timeout: float = 5.0) -> bool:
+        """连接是否还能用。"""
+        try:
+            self.conn.call("Browser.getVersion", timeout=timeout)
+            return True
+        except Exception:
+            return False
 
     def list_pages(self) -> list[dict]:
         infos = self.conn.call("Target.getTargets").get("targetInfos", [])

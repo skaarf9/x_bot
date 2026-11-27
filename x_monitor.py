@@ -247,15 +247,21 @@ class Monitor:
         self.fetcher: TimelineFetcher | None = None
         self.login_page: Page | None = None
         self.port: int = 0
+        self._cleaned = False
 
     # ---------- 浏览器 ----------
     def ensure(self) -> Browser:
+        if self.browser is not None and not self.browser.ping():
+            log.warning("CDP 连接已失效，重新连接浏览器（登录态不受影响）")
+            self.reset()
         if self.browser is None:
             settings = browser_util.resolve_settings(self.cfg)
             self.browser, self.port = browser_util.ensure_browser(
                 settings["port"], settings["profile"], settings["exe"])
             self.fetcher = TimelineFetcher(self.browser)
-            self._cleanup_stale_tabs()
+            if not self._cleaned:
+                self._cleaned = True
+                self._cleanup_stale_tabs()
         return self.browser
 
     def _cleanup_stale_tabs(self):
@@ -291,8 +297,14 @@ class Monitor:
             try:
                 self.login_page = browser.new_page("https://x.com/login")
             except Exception as e:  # noqa: BLE001
-                log.error("打开登录页失败: %s", e)
-                return False
+                log.warning("打开登录页失败，重连浏览器后重试: %s", e)
+                self.reset()
+                browser = self.ensure()
+                try:
+                    self.login_page = browser.new_page("https://x.com/login")
+                except Exception as e2:  # noqa: BLE001
+                    log.error("重连后仍无法打开登录页: %s", e2)
+                    return False
 
         timeout = int(self.cfg.get("login_timeout_seconds", 600))
         deadline = time.time() + timeout
