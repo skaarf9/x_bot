@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 本地运行产物（每个使用者自己的）
+config.json
+state.json
+runtime.json
+monitor.lock
+monitor.log*
+trigger.flag
+
+# 监控浏览器 profile（含 X 登录态，绝对不要提交）
+edge-monitor/
+browser-profile/
+
+# 测试临时文件
+_dedup_state.json
+tests/_dedup_state.json

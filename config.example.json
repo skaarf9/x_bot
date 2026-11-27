@@ -1,0 +1,27 @@
+{
+  "browser": {
+    "exe": "",
+    "profile_dir": "edge-monitor",
+    "debug_port": 9222
+  },
+  "interval_seconds": 90,
+  "login_timeout_seconds": 600,
+  "include_replies": false,
+  "skip_retweets": true,
+  "notify_on_first_seen": false,
+  "dedup_days": 7,
+  "dedup_max_per_user": 500,
+  "cache_cleanup_hours": 0,
+  "users": [],
+  "telegram": {
+    "enabled": false,
+    "token": "",
+    "chat_id": "",
+    "proxy": ""
+  },
+  "bark": {
+    "enabled": false,
+    "server": "",
+    "device_key": ""
+  }
+}
